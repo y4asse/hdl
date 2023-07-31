@@ -1,6 +1,6 @@
 module cpu (
 	input clk , rst , run , halt ,
-	output [7:0] addr , data_in , data_out, register_aout, register_bout,
+	output [7:0] addr , data_in , data_out, register_aout, register_bout, rand, code,
 	output await , fetcha , fetchb , execa , execb
 );
 //作成する
@@ -8,8 +8,10 @@ wire [7:0] pc_out,  opecode, operand, pc_in, register_cin, ram_data_out, ram_dat
 wire rden, wren, pc_load, register_cload;
 wire [2:0] register_asel, register_bsel, register_csel;
 assign addr = ram_addr;
-assign ram_data_out = data_out;
-assign ram_data_in = data_in;
+assign data_out = ram_data_out;
+assign data_in = ram_data_in;
+assign rand = operand;
+assign code = opecode;
 // stage
 stage s(
 	clk,//in
@@ -44,53 +46,65 @@ register r (
 	register_asel,//0～7の8個
 	register_bsel,//0～7の8個
 	opecode[2:0],//register_csel,//代入先のレジスタr[c]
-	register_cin, //register_cin,
+	register_cin, //register_cin,代入する値
 	register_aout,
 	register_bout
 );
 
-assign register_asel = 3'b011; //r[3]
+assign register_asel = select_register_asel(opecode, operand, fetcha, fetchb, execa, execb); //r[3]
 function [2:0] select_register_asel;
 	input [7:0] _opecode;
 	input [7:0] _operand;
+	input _fetcha;
+	input _fetchb;
+	input _execa;
+	input _execb;
 	begin
-		case (_opecode[7:3])
-			//LDの時
-			5'b01000 : select_register_asel = _operand[7:5];
-			default: select_register_asel = 3'b011; //r[3]を出力
-		endcase
+		if(_fetcha == 1 || _fetchb == 1) 
+			select_register_asel = 3'b011; //r[3]を出力
+		else if(_execa == 1 || _execb == 1) begin
+			case (_opecode[7:3])
+				//LDの時
+				5'b01000 : select_register_asel = _operand[7:5];
+				default: select_register_asel = 3'b011; //r[3]を出力
+			endcase
+		end 
 	end
 endfunction
 
 assign register_bsel = 3'b100; //r[4]
 
-assign register_cin = operand;
+assign register_cin = select_register_cin(opecode[7:3], operand, execa,execb, ram_data_out);
 function [7:0] select_register_cin;
-	input [7:0] _opecode;
+	input [4:0] _opecode_slice;
 	input [7:0] _operand;
 	input _execa;
+	input _execb;
+	input [7:0] _ram_data_out;
 	begin
-		if(_execa	== 1'b1) begin
-			case(_opecode[7:3])
+		if(_execa == 1 || _execb == 1) begin
+			case(_opecode_slice)
 				//LDIの時operandをそのままcinに代入
 				5'b01010 : select_register_cin = _operand;
 				//LDの時ram_data_outをcinに代入
-				5'b01000 : select_register_cin = ram_data_out;
+				5'b01000 : select_register_cin = _ram_data_out;
 				//MOVの時
 				5'b00001 : select_register_cin = _operand;
+				default: select_register_cin = 8'b0;
 			endcase
 		end else
 			select_register_cin = 8'b0;
 	end
 endfunction
 
-assign register_cload = select_register_cload(opecode[7:3], execa);
+assign register_cload = select_register_cload(opecode[7:3], execb);
 //cloadはr[c]に書き込むときにhighになる,逆にcloadがhighのときのみcinが使われるので，cinは関数でなくてよいので，operandをそのまま使う
 function select_register_cload;
 	input [4:0] _opecode_slice;
 	input _execa;
+	input _execb;
 	begin
-		if (_execa == 1'b1) begin
+		if (_execa == 1 || _execb == 1) begin
 			case (_opecode_slice)
 				//LDIの時
 				5'b01010 : select_register_cload = 1;
@@ -113,26 +127,7 @@ endfunction
 // 	end
 // endfunction
 
-// assign register_csel = select_register_csel(opcode[2:0]);
-// function [2:0] select_register_csel;
-// 	input [2:0] _opecode_slice;
-// 	begin
-// 		//LDI| 0 1 0 1 0 c2 c1 c0 | m7 m6 m5 m4 m3 m2 m1 m0 | m → r[c]
-// 		if (_opecode_slice == 3'010) select_register_csel = operand[2:0];
-// 		else select_register_csel = 3'b0;
-// 	end
-// endfunction
-
-
-
-
-
-
 // ram
-/* こ こ で ， r a m に 接 続 さ れ る 信 号 線 を 宣 言 */
-//また，状態が execa もしくは execb のとき，opcode に応じて読み込みか書き込みか決まる（例えば，LD か
-//ST か）ので，必要に応じて rden と wren のどちらを High にして，どちらを Low にするかを決める．つまり，rden
-//と wren の信号の接続には，fetcha，fetchb，execa，execb，opcode が必要である．
 ram ra(
 	ram_addr ,//select_addrによってpc_outかopecodeの下部か選ばれる
 	clk,//in, ok
@@ -198,20 +193,22 @@ function [1:0] assign_ram ;	//rden, wdenを決める
 		end
 endfunction
 
-assign ram_addr = select_ram_addr ( fetcha , fetchb , pc_out , execa, opecode);
+assign ram_addr = select_ram_addr ( fetcha , fetchb , pc_out , execa,execb,  opecode[7:3], register_aout);
 function [7:0] select_ram_addr ;
 	input _fetcha ;
 	input _fetchb ;
 	input [7:0] _pc_out ;
 	input _execa;
-	input [7:0] _opecode;
+	input _execb;
+	input [4:0] _opecode_slice;
+	input [7:0] _register_aout;
 	begin
-		if (_fetcha == 1'b1 || _fetchb == 1'b1) select_ram_addr = _pc_out;
-		else if (_execa == 1) begin
-			case(_opecode)
+		if (_fetcha == 1 || _fetchb == 1) select_ram_addr = _pc_out;
+		else if (_execa == 1 || _execb) begin
+			case(_opecode_slice)
 				//LDの時ram[r[a]]になる(r[a]はregisterの方からもらう)
-				5'b01000: select_ram_addr = register_aout;
-				default: select_ram_addr = _pc_out;
+				5'b01000: select_ram_addr = _register_aout;
+				default: select_ram_addr = 8'b0;
 			endcase
 		end
 	end

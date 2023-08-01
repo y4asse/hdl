@@ -66,6 +66,8 @@ function [2:0] select_register_asel;
 			case (_opecode[7:3])
 				//LDの時
 				5'b01000 : select_register_asel = _operand[7:5];
+				//MOVの時
+				5'b00001 : select_register_asel = _operand[7:5];
 				default: select_register_asel = 3'b011; //r[3]を出力
 			endcase
 		end 
@@ -74,26 +76,29 @@ endfunction
 
 assign register_bsel = 3'b100; //r[4]
 
-assign register_cin = select_register_cin(opecode[7:3], operand, execa,execb, ram_data_out);
+assign register_cin = select_register_cin(opecode[7:3], operand, execa,execb, ram_data_out, register_aout);
 function [7:0] select_register_cin;
 	input [4:0] _opecode_slice;
 	input [7:0] _operand;
 	input _execa;
 	input _execb;
 	input [7:0] _ram_data_out;
+	input [7:0] _register_aout;
 	begin
 		if(_execa == 1) begin
 			case(_opecode_slice)
 				//LDIの時operandをそのままcinに代入
 				5'b01010 : select_register_cin = _operand;
 				//MOVの時
-				5'b00001 : select_register_cin = _operand;
+				5'b00001 : select_register_cin = _register_aout;
 				default: select_register_cin = 8'b0;
 			endcase
 		end else if(_execb == 1) begin
 			case(_opecode_slice)
 				//LDの時ram_data_outをcinに代入
 				5'b01000 : select_register_cin = _ram_data_out;
+				//LDSの時
+				5'b01001 : select_register_cin = _ram_data_out;
 			endcase
 		end else
 			select_register_cin = 8'b0;
@@ -109,18 +114,22 @@ function select_register_cload;
 	input _fetcha;
 	input _fetchb;
 	begin
-		if (_fetcha == 1) 
+		if (_fetcha == 1 || _fetchb == 1) 
 			select_register_cload = 0;
 		else if (_execa == 1) begin
 			case (_opecode_slice)
 				//LDIの時
 				5'b01010 : select_register_cload = 1;
+				//MOVの時
+				5'b00001 : select_register_cload = 1;
 				default: select_register_cload = 0;
 			endcase
 		end else if (_execb == 1) begin 
 			case (_opecode_slice)
 				//LDの時
 				5'b01000 : select_register_cload = 1;
+				//LDSの時
+				5'b01001 : select_register_cload = 1;
 				default: select_register_cload = 0;
 			endcase
 		end else
@@ -151,6 +160,7 @@ ram ra(
 // assign opcode = data_out;//ff使ってfetchaのときのdataoutをopcodeに代入する？？
 // assign operand = data_out;//ff使ってfetchbのときのdataoutをoperandに代入する？？
 //opecode, operandを取り出し，保存
+
 generate
 	genvar i;
 	for (i =0; i <8; i=i +1) begin : gen
@@ -192,6 +202,8 @@ function [1:0] assign_ram ;	//rden, wdenを決める
 				case(_opecode_slice)
 					//LDの時
 					5'b01000: assign_ram = {1'b1, 1'b0}; //rdenをhighにする(ramから読み込む)
+					//LDIの時
+					5'b01010: assign_ram = {1'b1, 1'b0}; //rdenをhighにする(ramから読み込む)
 					default: assign_ram = {1'b1, 1'b0}; //rdenをhighにする(ramから読み込む)
 				endcase
 				//ST, STSの時にwrenをhighにする
@@ -204,7 +216,7 @@ function [1:0] assign_ram ;	//rden, wdenを決める
 		end
 endfunction
 
-assign ram_addr = select_ram_addr ( fetcha , fetchb , pc_out , execa,execb,  opecode[7:3], register_aout);
+assign ram_addr = select_ram_addr ( fetcha , fetchb , pc_out , execa,execb,  opecode[7:3],operand, register_aout);
 function [7:0] select_ram_addr ;
 	input _fetcha ;
 	input _fetchb ;
@@ -212,6 +224,7 @@ function [7:0] select_ram_addr ;
 	input _execa;
 	input _execb;
 	input [4:0] _opecode_slice;
+	input [7:0] _operand;
 	input [7:0] _register_aout;
 	begin
 		if (_fetcha == 1 || _fetchb == 1) select_ram_addr = _pc_out;
@@ -219,6 +232,8 @@ function [7:0] select_ram_addr ;
 			case(_opecode_slice)
 				//LDの時ram[r[a]]になる(r[a]はregisterの方からもらう)
 				5'b01000: select_ram_addr = _register_aout;
+				//LDSの時
+				5'b01001: select_ram_addr = _operand;
 				default: select_ram_addr = 8'b0;
 			endcase
 		end

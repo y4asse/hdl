@@ -74,6 +74,14 @@ function [2:0] select_register_asel;
 				5'b01100 : select_register_asel = _operand[7:5];
 				//STの時
 				5'b01100 : select_register_asel = _operand[7:5];
+				//INCの時
+				5'b10000 : select_register_asel = _operand[7:5];
+				//DECの時
+				5'b10001 : select_register_asel = _operand[7:5];
+				//ADDの時
+				5'b10010 : select_register_asel = _operand[7:5];
+				//SUBの時
+				5'b10011 : select_register_asel = _operand[7:5];
 				default: select_register_asel = 3'b011; //r[3]を出力
 			endcase
 		end 
@@ -95,13 +103,17 @@ function [2:0] select_register_bsel;
 			case (_opecode[7:3])
 				//STの時
 				5'b01100 : select_register_bsel = _opecode[2:0];
+				//ADDの時
+				5'b10010 : select_register_bsel = _operand[4:2];
+				//SUBの時
+				5'b10011 : select_register_bsel = _operand[4:2];
 				default: select_register_bsel = 3'b100; //r[4]を出力
 			endcase
 		end 
 	end
 endfunction
 
-assign register_cin = select_register_cin(opecode[7:3], operand, execa,execb, ram_data_out, register_aout);
+assign register_cin = select_register_cin(opecode[7:3], operand, execa,execb, ram_data_out, register_aout, alu_sout);
 function [7:0] select_register_cin;
 	input [4:0] _opecode_slice;
 	input [7:0] _operand;
@@ -109,6 +121,7 @@ function [7:0] select_register_cin;
 	input _execb;
 	input [7:0] _ram_data_out;
 	input [7:0] _register_aout;
+	input [7:0] _alu_sout;
 	begin
 		if(_execa == 1) begin
 			case(_opecode_slice)
@@ -116,6 +129,14 @@ function [7:0] select_register_cin;
 				5'b01010 : select_register_cin = _operand;
 				//MOVの時
 				5'b00001 : select_register_cin = _register_aout;
+				//INCの時
+				5'b10000 : select_register_cin = _alu_sout;
+				//DECの時
+				5'b10001 : select_register_cin = _alu_sout;
+				//ADDの時
+				5'b10010 : select_register_cin = _alu_sout;
+				//SUBの時
+				5'b10011 : select_register_cin = _alu_sout;
 				default: select_register_cin = 8'b0;
 			endcase
 		end else if(_execb == 1) begin
@@ -147,6 +168,14 @@ function select_register_cload;
 				5'b01010 : select_register_cload = 1;
 				//MOVの時
 				5'b00001 : select_register_cload = 1;
+				//INCの時
+				5'b10000 : select_register_cload = 1;
+				//DECの時
+				5'b10001 : select_register_cload = 1;
+				//ADDの時
+				5'b10010 : select_register_cload = 1;
+				//SUBの時
+				5'b10011 : select_register_cload = 1;
 				default: select_register_cload = 0;
 			endcase
 		end else if (_execb == 1) begin 
@@ -263,29 +292,40 @@ function [1:0] assign_ram ;	//rden, wdenを決める
 		end
 endfunction
 
-
-
-
 // alu
-/* こ こ で ， a l u に 接 続 さ れ る 信 号 線 を 宣 言 */
-//module alu (
-//	input clk , rst , ena ,
-//	input [1:0] ctrl ,
-//	input [7:0] ain , bin ,
-//	output cflag , zflag ,
-//	output [7:0] sout
-//);
-//alu a (
-//	clk,
-//	rst,
-//	ena,
-//	ctrl,
-//	ain,
-//	bin
-//	cflag,
-//	zflag,
-//	sout
-//);
+wire [7:0] alu_ain, alu_bin, alu_sout;
+wire alu_ena;
+wire [1:0] alu_ctrl;
+alu a (
+	clk,
+	rst,
+	alu_ena, //hの時演算結果によりフラグを更新する
+	alu_ctrl,//00->a+1, 01->a-1, 10->a+b, 11->a-b
+	register_aout, //alu_ain=r[a]固定でいい(registerの方で値を制御する)
+	register_bout, //alu_ain=r[b]固定でいい(registerの方で値を制御する)
+	alu_cflag, //out
+	alu_zflag, //out
+	alu_sout //out
+);
+
+assign alu_ctrl = select_alu_ctrl (opecode[7:3]);
+function [1:0] select_alu_ctrl;
+	input [4:0] _opecode_slice;
+	begin
+		case(_opecode_slice)
+			//INCの時
+			8'b10000: select_alu_ctrl = 2'b00;
+			//DECの時
+			8'b10001: select_alu_ctrl = 2'b01;
+			//ADDの時
+			8'b10010: select_alu_ctrl = 2'b10;
+			//SUBの時
+			8'b10011: select_alu_ctrl = 2'b11;
+			default: select_alu_ctrl = 2'b00;
+		endcase
+	end
+endfunction
+
 
 //generate
 generate

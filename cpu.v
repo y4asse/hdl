@@ -1,7 +1,7 @@
 module cpu (
 	input clk , rst , run , halt ,
 	output [7:0] addr , data_in , data_out, register_aout, register_bout, rand, code,ram_out,
-	output await , fetcha , fetchb , execa , execb, wren_out, rden_out
+	output await , fetcha , fetchb , execa , execb, wren_out, rden_out, alu_ena_out, alu_zflag, alu_cflag 
 );
 //作成する
 wire [7:0] pc_out,  opecode, operand, pc_in, register_cin, ram_data_out, ram_data_in, ram_addr;
@@ -14,6 +14,7 @@ assign rand = operand;
 assign code = opecode;
 assign wren_out = wren;
 assign rden_out = rden;
+assign alu_ena_out = alu_ena;
 // stage
 stage s(
 	clk,//in
@@ -37,19 +38,21 @@ pc p(
 	pc_in, //in, in
 	pc_out  //out, out(1, 2, 3, ...)
 );
-assign pc_load = select_pc_load(execa, opecode);
+assign pc_load = select_pc_load(execa, opecode, alu_zflag);
 function select_pc_load;
 	input _execa;
 	input [7:0] _opecode;
+	input _alu_zflag;
 	begin
 		if(_execa == 1) begin
-			case(_opecode)
-				//JMPの時
-				8'b00111111 : select_pc_load = 1;
-			endcase
-		end else begin
+			//JMPの時
+			if(_opecode == 8'b00111111)
+				select_pc_load = 1;
+			//JNZの時
+			else if(_opecode == 8'b00100011 && _alu_zflag != 1)
+				select_pc_load = 1;
+		end else 
 			select_pc_load = 0;
-		end
 	end
 endfunction
 
@@ -63,6 +66,8 @@ function [7:0] select_pc_in;
 			case(_opecode)
 				//JMPの時
 				8'b00111111 : select_pc_in = _operand;
+				//JNZの時
+				8'b00100011 : select_pc_in = _operand;
 			endcase
 		end
 	end
@@ -336,19 +341,43 @@ alu a (
 	alu_sout //out
 );
 
+assign alu_ena = select_alu_ena (opecode[7:3], execa);
+function select_alu_ena;
+	input [4:0] _opecode_slice;
+	input _execa;
+	begin
+		if(_execa == 1) begin
+			case(_opecode_slice)
+				//INCの時
+				5'b10000: select_alu_ena = 1;
+				//DECの時
+				5'b10001: select_alu_ena = 1;
+				//ADDの時
+				5'b10010: select_alu_ena = 1;
+				//SUBの時
+				5'b10011: select_alu_ena = 1;
+				// //JZの時
+				// 8'b00100010 : select_alu_ena = 1;
+				default: select_alu_ena = 0;
+			endcase
+		end else
+			select_alu_ena = 0;	
+	end
+endfunction
+
 assign alu_ctrl = select_alu_ctrl (opecode[7:3]);
 function [1:0] select_alu_ctrl;
 	input [4:0] _opecode_slice;
 	begin
 		case(_opecode_slice)
 			//INCの時
-			8'b10000: select_alu_ctrl = 2'b00;
+			5'b10000: select_alu_ctrl = 2'b00;
 			//DECの時
-			8'b10001: select_alu_ctrl = 2'b01;
+			5'b10001: select_alu_ctrl = 2'b01;
 			//ADDの時
-			8'b10010: select_alu_ctrl = 2'b10;
+			5'b10010: select_alu_ctrl = 2'b10;
 			//SUBの時
-			8'b10011: select_alu_ctrl = 2'b11;
+			5'b10011: select_alu_ctrl = 2'b11;
 			default: select_alu_ctrl = 2'b00;
 		endcase
 	end

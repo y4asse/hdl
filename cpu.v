@@ -96,17 +96,17 @@ function [2:0] select_register_asel;
 	input _execb;
 	begin
 		if(_fetcha == 1 || _fetchb == 1) 
-			select_register_asel = 3'b011; //r[3]を出力
+			select_register_asel = 3'b000; //r[0]を出力
 		else if(_execa == 1 || _execb == 1) begin
 			case (_opecode[7:3])
 				//LDの時
 				5'b01000 : select_register_asel = _operand[7:5];
 				//MOVの時
 				5'b00001 : select_register_asel = _operand[7:5];
-				//STSの時
-				5'b01100 : select_register_asel = _operand[7:5];
 				//STの時
 				5'b01100 : select_register_asel = _operand[7:5];
+				//STSの時
+				5'b01101 : select_register_asel = _opecode[2:0];
 				//INCの時
 				5'b10000 : select_register_asel = _operand[7:5];
 				//DECの時
@@ -115,13 +115,13 @@ function [2:0] select_register_asel;
 				5'b10010 : select_register_asel = _operand[7:5];
 				//SUBの時
 				5'b10011 : select_register_asel = _operand[7:5];
-				default: select_register_asel = 3'b011; //r[3]を出力
+				default: select_register_asel = 3'b000; //r[0]を出力
 			endcase
 		end 
 	end
 endfunction
 
-assign register_bsel = select_register_bsel(opecode, operand, fetcha, fetchb, execa, execb); //r[4]
+assign register_bsel = select_register_bsel(opecode, operand, fetcha, fetchb, execa, execb);
 function [2:0] select_register_bsel;
 	input [7:0] _opecode;
 	input [7:0] _operand;
@@ -131,7 +131,7 @@ function [2:0] select_register_bsel;
 	input _execb;
 	begin
 		if(_fetcha == 1 || _fetchb == 1) 
-			select_register_bsel = 3'b100; //r[4]を出力
+			select_register_bsel = 3'b001; //r[1]を出力
 		else if(_execa == 1 || _execb == 1) begin
 			case (_opecode[7:3])
 				//STの時
@@ -140,7 +140,7 @@ function [2:0] select_register_bsel;
 				5'b10010 : select_register_bsel = _operand[4:2];
 				//SUBの時
 				5'b10011 : select_register_bsel = _operand[4:2];
-				default: select_register_bsel = 3'b100; //r[4]を出力
+				default: select_register_bsel = 3'b001; //r[1]を出力
 			endcase
 		end 
 	end

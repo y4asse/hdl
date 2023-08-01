@@ -37,8 +37,36 @@ pc p(
 	pc_in, //in, in
 	pc_out  //out, out(1, 2, 3, ...)
 );
-assign pc_load = 1'b0;
-assign pc_in = 8'b0;
+assign pc_load = select_pc_load(execa, opecode);
+function select_pc_load;
+	input _execa;
+	input [7:0] _opecode;
+	begin
+		if(_execa == 1) begin
+			case(_opecode)
+				//JMPの時
+				8'b00111111 : select_pc_load = 1;
+			endcase
+		end else begin
+			select_pc_load = 0;
+		end
+	end
+endfunction
+
+assign pc_in = select_pc_in(execa, opecode, operand);
+function [7:0] select_pc_in;
+	input _execa;
+	input [7:0] _opecode;
+	input [7:0] _operand;
+	begin
+		if (_execa == 1) begin
+			case(_opecode)
+				//JMPの時
+				8'b00111111 : select_pc_in = _operand;
+			endcase
+		end
+	end
+endfunction
 
 // register
 register r (

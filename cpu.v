@@ -1,6 +1,6 @@
 module cpu (
 	input clk , rst , run , halt ,
-	output [7:0] addr , data_in , data_out, register_aout, register_bout, rand, code,
+	output [7:0] addr , data_in , data_out, register_aout, register_bout, rand, code,ram_out,
 	output await , fetcha , fetchb , execa , execb
 );
 //作成する
@@ -8,7 +8,7 @@ wire [7:0] pc_out,  opecode, operand, pc_in, register_cin, ram_data_out, ram_dat
 wire rden, wren, pc_load, register_cload;
 wire [2:0] register_asel, register_bsel, register_csel;
 assign addr = ram_addr;
-assign data_out = ram_data_out;
+assign ram_out = ram_data_out;
 assign data_in = ram_data_in;
 assign rand = operand;
 assign code = opecode;
@@ -82,37 +82,48 @@ function [7:0] select_register_cin;
 	input _execb;
 	input [7:0] _ram_data_out;
 	begin
-		if(_execa == 1 || _execb == 1) begin
+		if(_execa == 1) begin
 			case(_opecode_slice)
 				//LDIの時operandをそのままcinに代入
 				5'b01010 : select_register_cin = _operand;
-				//LDの時ram_data_outをcinに代入
-				5'b01000 : select_register_cin = _ram_data_out;
 				//MOVの時
 				5'b00001 : select_register_cin = _operand;
 				default: select_register_cin = 8'b0;
+			endcase
+		end else if(_execb == 1) begin
+			case(_opecode_slice)
+				//LDの時ram_data_outをcinに代入
+				5'b01000 : select_register_cin = _ram_data_out;
 			endcase
 		end else
 			select_register_cin = 8'b0;
 	end
 endfunction
 
-assign register_cload = select_register_cload(opecode[7:3], execb);
+assign register_cload = select_register_cload(opecode[7:3],execa, execb, fetcha, fetchb);
 //cloadはr[c]に書き込むときにhighになる,逆にcloadがhighのときのみcinが使われるので，cinは関数でなくてよいので，operandをそのまま使う
 function select_register_cload;
 	input [4:0] _opecode_slice;
 	input _execa;
 	input _execb;
+	input _fetcha;
+	input _fetchb;
 	begin
-		if (_execa == 1 || _execb == 1) begin
+		if (_fetcha == 1) 
+			select_register_cload = 0;
+		else if (_execa == 1) begin
 			case (_opecode_slice)
 				//LDIの時
 				5'b01010 : select_register_cload = 1;
+				default: select_register_cload = 0;
+			endcase
+		end else if (_execb == 1) begin 
+			case (_opecode_slice)
 				//LDの時
 				5'b01000 : select_register_cload = 1;
 				default: select_register_cload = 0;
 			endcase
-		end else 
+		end else
 			select_register_cload = 0;
 	end
 endfunction
@@ -146,7 +157,7 @@ generate
 	// opecode
 	//opecodeとは，fetcha が High のとき，pc_out の値を読み込むための信号線である．
 	dffe opecode_dffe(
-	.d(data_out[i]) ,
+	.d(ram_data_out[i]) ,
 	. clk ( !clk ),
 	. clrn (! rst ),
 	. prn (1'b1) ,
@@ -156,7 +167,7 @@ generate
 	//operand
 	//operandとは，fetchb が High のとき，pc_out の値を読み込むための信号線である．
 	dffe operand_dffe(
-	.d(data_out[i]) ,
+	.d(ram_data_out[i]) ,
 	. clk ( !clk ),
 	. clrn (! rst ),
 	. prn (1'b1) ,
